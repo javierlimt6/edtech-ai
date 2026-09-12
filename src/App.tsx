@@ -1,9 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight,
   Box,
   Braces,
-  Check,
   ChevronDown,
   Cpu,
   Eye,
@@ -12,31 +10,31 @@ import {
   Layers3,
   Maximize2,
   MousePointer2,
-  Pause,
-  Play,
-  RotateCcw,
   Settings2,
-  SkipForward,
   Sparkles,
   Terminal,
   Wind,
   X,
 } from "lucide-react";
-import {
-  advance,
-  begin,
-  DEFAULTS,
-  idleRun,
-  memory,
-  outputText,
-  preset,
-  STATIONS,
-} from "./sim";
-import type { Run, Settings } from "./sim";
+import { DEFAULTS, idleRun, memory, preset, STATIONS } from "./sim";
+import type { Settings } from "./sim";
 import type { CameraMode } from "./World";
+import Inspector from "./Inspector";
+import Intro from "./Intro";
+import PromptDeck from "./PromptDeck";
+import { EXHIBITS } from "./flow";
+import { buildTrace, traceFrame, PARTS } from "./trace";
+import type { Trace, Point } from "./trace";
 const World = lazy(() => import("./World"));
 const ICONS = [Braces, Layers3, Cpu, Sparkles, Gauge, Terminal];
 const OPTIMIZATIONS = [
+  {
+    key: "kvCache",
+    name: "KV cache",
+    tag: "REUSE",
+    detail:
+      "Reuse prior context. Off: recompute the growing context every decode pass.",
+  },
   {
     key: "paged",
     name: "Paged attention",
@@ -69,42 +67,82 @@ const OPTIMIZATIONS = [
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
-  const [run, setRun] = useState<Run>(idleRun);
-  const [prompt, setPrompt] = useState(
-    "How does an AI turn my words into an answer?",
-  );
+  const [trace, setTrace] = useState<Trace | null>(null);
+  const [cursor, setCursor] = useState(0);
+  const frame = trace ? traceFrame(trace, cursor) : null;
+  const run = frame?.run ?? idleRun();
+  const prompt = "How does AI come up with an answer?";
+  const [started, setStarted] = useState(false);
+  const [introOrigin, setIntroOrigin] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (started) document.getElementById("lesson-play")?.focus();
+  }, [started]);
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
+  const [cameraMode, setCameraMode] = useState<CameraMode>("guided");
   const [focus, setFocus] = useState("overview");
   const [cameraRevision, setCameraRevision] = useState(0);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [popupPart, setPopupPart] = useState<string | null>(null);
+  const [partFocus, setPartFocus] = useState<Point | null>(null);
+  const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [flightLocked, setFlightLocked] = useState(false);
   const [flightError, setFlightError] = useState("");
   const [hud, setHud] = useState(true);
-  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 900);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [reduced, setReduced] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const stats = useMemo(() => memory(run, settings), [run, settings]);
-  const phaseStation = STATIONS.find((station) => station.id === run.phase);
-  const inspected = STATIONS.find((station) => station.id === focus);
-  const inspecting = cameraMode === "orbit" && inspected;
+  const stats = useMemo(
+    () => frame?.cache ?? memory(run, settings),
+    [frame?.cache, run, settings],
+  );
+  const phaseStation = EXHIBITS.find(
+    (station) => station.id === frame?.event?.station,
+  );
+  const inspected = EXHIBITS.find(
+    (station) =>
+      station.id ===
+      (PARTS.find((p) => p.id === selectedPart)?.station ?? focus),
+  );
+  const inspecting = cameraMode === "guided" && inspected;
   const activeStation =
     cameraMode === "follow" ? phaseStation : (inspected ?? phaseStation);
-  const active = run.phase !== "idle" && run.phase !== "done";
+  const inspectionPart =
+    cameraMode === "fly"
+      ? flightLocked
+        ? hovered
+        : selectedPart
+      : cameraMode === "follow"
+        ? (frame?.event?.part ?? selectedPart)
+        : (selectedPart ??
+          (focus === "overview"
+            ? frame?.event?.part
+            : PARTS.find((p) => p.station === focus)?.id) ??
+          null);
+  const inspectionTarget =
+    PARTS.find((p) => p.id === inspectionPart)?.station ??
+    (cameraMode === "guided" ? inspected?.id : phaseStation?.id) ??
+    null;
   const optimizationCount = OPTIMIZATIONS.filter(
-    (option) => settings[option.key],
+    (option) =>
+      settings[option.key] && (option.key !== "paged" || settings.kvCache),
   ).length;
 
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(
-      () => setRun((previous) => advance(previous, settings)),
-      1000 / speed,
-    );
+    let previousTime = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      const seconds = Math.min((now - previousTime) / 1000, 0.1) * speed;
+      previousTime = now;
+      setCursor((previous) =>
+        Math.min(trace?.events.length ?? 0, previous + seconds / 3),
+      );
+    }, 1000 / 30);
     return () => clearInterval(timer);
-  }, [running, settings, speed]);
+  }, [running, trace, speed]);
   useEffect(() => {
     if (run.phase === "done") setRunning(false);
   }, [run.phase]);
@@ -115,6 +153,7 @@ export default function App() {
     const key = (event: KeyboardEvent) => {
       if (
         event.code === "KeyH" &&
+        !(event.target as HTMLElement).closest("dialog") &&
         !/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement).tagName)
       ) {
         setHud((value) => !value);
@@ -131,45 +170,116 @@ export default function App() {
       document.removeEventListener("visibilitychange", hidden);
     };
   }, []);
+  useEffect(() => {
+    const step = (event: KeyboardEvent) => {
+      if (
+        !started ||
+        !trace ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        !(event.target instanceof HTMLElement) ||
+        event.target.closest(
+          "input, textarea, select, [contenteditable], dialog",
+        ) ||
+        (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+      )
+        return;
+      event.preventDefault();
+      if (cameraMode !== "fly") {
+        setCameraMode("follow");
+        setSelectedPart(null);
+      }
+      setRunning(false);
+      setCursor((position) =>
+        event.key === "ArrowLeft"
+          ? Math.max(0, Math.ceil(position) - 1)
+          : Math.min(trace.events.length, Math.floor(position) + 1),
+      );
+    };
+    window.addEventListener("keydown", step);
+    return () => window.removeEventListener("keydown", step);
+  }, [started, trace, cameraMode]);
   const chooseMode = (mode: CameraMode) => {
     setCameraMode(mode);
+    setHovered(null);
     setFlightError("");
     if (mode !== "fly") setFlightLocked(false);
   };
   const selectStation = (id: string) => {
+    setRunning(false);
+    setSelectedPart(null);
     setFocus(id);
-    chooseMode("orbit");
+    chooseMode("guided");
     setCameraRevision((value) => value + 1);
+  };
+  const selectPart = (id: string) => {
+    setPartFocus(null);
+    setRunning(false);
+    setSelectedPart(id);
+    setFocus(id);
+    chooseMode("guided");
+    setCameraRevision((value) => value + 1);
+  };
+  const seek = (position: number) => {
+    if (cameraMode !== "fly") {
+      chooseMode("follow");
+      setSelectedPart(null);
+    }
+    setRunning(false);
+    setCursor(position);
   };
   const configure = (patch: Partial<Settings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    if (run.phase !== "idle") {
-      setRun(begin(run.prompt, next));
-      setNotice("Run restarted with your new configuration.");
+    setRunning(false);
+    setSelectedPart(null);
+    setHovered(null);
+    setFocus("overview");
+    chooseMode("guided");
+    if (trace) {
+      setTrace(buildTrace(trace.initial.prompt, next));
+      setCursor(0);
+      setNotice("Run restarted and paused with your new configuration.");
     }
   };
   const send = () => {
     if (!prompt.trim()) return;
-    const next = begin(prompt, settings);
-    setRun(next);
-    setRunning(true);
+    setTrace(buildTrace(prompt, settings));
+    setCursor(0);
+    setRunning(false);
+    setSelectedPart(null);
     setNotice("");
     if (cameraMode !== "fly") chooseMode("follow");
   };
   const reset = () => {
-    setRun(idleRun());
+    setTrace(null);
+    setCursor(0);
     setRunning(false);
     setNotice("");
     setFocus("overview");
-    chooseMode("orbit");
+    setSelectedPart(null);
+    chooseMode("guided");
     setCameraRevision((value) => value + 1);
   };
 
   return (
     <main
-      className={`sandbox ${hud ? "" : "hud-hidden"} ${flightLocked ? "flight-locked" : ""}`}
+      className={`sandbox lesson-shell ${started ? "" : "is-intro"} ${inspectionTarget ? "has-inspector" : ""} ${panelOpen ? "lab-open" : ""} ${hud ? "" : "hud-hidden"} ${flightLocked ? "flight-locked" : ""}`}
     >
+      {!started && (
+        <Intro
+          prompt={prompt}
+          onStart={(origin) => {
+            setIntroOrigin(origin);
+            setStarted(true);
+            send();
+          }}
+          onDismiss={() => setStarted(true)}
+        />
+      )}
       <div
         className="full-world"
         aria-label={`3D inference world. Phase: ${run.phase}. ${run.output.length} output tokens. ${stats.reserved} reserved KV token-head slots.`}
@@ -185,30 +295,48 @@ export default function App() {
         >
           <World
             run={run}
+            cache={stats}
             settings={settings}
             cameraMode={cameraMode}
             focus={focus}
             cameraRevision={cameraRevision}
             reduced={reduced}
             onStation={selectStation}
+            inspected={inspectionPart}
+            event={frame?.event}
+            progress={frame?.progress ?? 0}
+            partFocus={partFocus}
+            popupPart={popupPart}
+            onClosePopup={() => {
+              setPopupPart(null);
+              setPartFocus(null);
+              if (popupPart)
+                setFocus(PARTS.find((p) => p.id === popupPart)!.station);
+              setCameraRevision((value) => value + 1);
+            }}
+            onPart={(id, point) => {
+              selectPart(id);
+              setPartFocus(point ?? null);
+              setPopupPart(id);
+            }}
+            onInspect={setHovered}
             onFlightChange={setFlightLocked}
             onFlightError={setFlightError}
           />
         </Suspense>
       </div>
-      <div className="vignette" />
       <header className="world-header hud">
         <a className="brand" href="/prototype/inside-the-machine">
           <span className="brand-icon">
             <Box size={25} />
           </span>
           <span>
-            INFERENCE<span className="brand-accent">CRAFT</span>
+            vis<span className="brand-accent">.ai</span>
             <small>INSIDE THE MACHINE / WORLD 001</small>
           </span>
         </a>
         <div className="world-status">
-          <i /> TRANSFORMER VALLEY <span>/</span> CREATIVE SANDBOX
+          <i /> REDSTONE FLATLANDS <span>/</span> CREATIVE SANDBOX
         </div>
         <div className="header-actions">
           <button
@@ -345,7 +473,7 @@ export default function App() {
           </div>
           <div className="section-heading">
             <span>OPTIMIZATIONS</span>
-            <b>{optimizationCount} / 4 ON</b>
+            <b>{optimizationCount} / 5 ON</b>
           </div>
           <div className="optimization-list">
             {OPTIMIZATIONS.map((option) => (
@@ -361,6 +489,7 @@ export default function App() {
                     aria-checked={settings[option.key]}
                     aria-label={option.name}
                     aria-describedby={`${option.key}-detail`}
+                    disabled={option.key === "paged" && !settings.kvCache}
                     className="toggle"
                     onClick={() =>
                       configure({ [option.key]: !settings[option.key] })
@@ -369,7 +498,11 @@ export default function App() {
                     <span />
                   </button>
                 </div>
-                <p id={`${option.key}-detail`}>{option.detail}</p>
+                <p id={`${option.key}-detail`}>
+                  {option.key === "paged" && !settings.kvCache
+                    ? "Requires KV cache. Your paging preference is retained."
+                    : option.detail}
+                </p>
               </div>
             ))}
           </div>
@@ -442,6 +575,60 @@ export default function App() {
               </select>
             </label>
           </div>
+          <div
+            className="work-counters"
+            aria-label="Illustrative work counters"
+          >
+            <span>YOUR PROMPT</span>
+            <dl>
+              <div>
+                <dt>Token positions processed</dt>
+                <dd>{run.work.processed}</dd>
+              </div>
+              <div>
+                <dt>Prior positions recomputed</dt>
+                <dd>{run.work.recomputed}</dd>
+              </div>
+              <div>
+                <dt>Context tokens reused</dt>
+                <dd>{run.work.cacheReads}</dd>
+              </div>
+              <div>
+                <dt>Target passes</dt>
+                <dd>{run.passes}</dd>
+              </div>
+              <div>
+                <dt>Drafted / verified</dt>
+                <dd>
+                  {run.work.drafted} / {run.work.verified}
+                </dd>
+              </div>
+            </dl>
+            <span>ALL 8 REQUESTS</span>
+            <dl>
+              <div>
+                <dt>Idle lane steps</dt>
+                <dd>{run.work.idleLanes}</dd>
+              </div>
+              <div>
+                <dt>Lane utilization</dt>
+                <dd>
+                  {run.work.laneSteps
+                    ? Math.round(
+                        (run.work.occupiedLanes / run.work.laneSteps) * 100,
+                      )
+                    : 0}
+                  %
+                </dd>
+              </div>
+              <div>
+                <dt>Peak KV slots / unused</dt>
+                <dd>
+                  {run.work.peakReserved} / {run.work.peakUnused}
+                </dd>
+              </div>
+            </dl>
+          </div>
           <div className="panel-bottom">
             <span>
               <i /> MODEL: TOY TRANSFORMER
@@ -451,35 +638,55 @@ export default function App() {
         </aside>
       )}
 
-      <div className="camera-controls hud" aria-label="Camera controls">
-        <button
-          className={cameraMode === "orbit" ? "selected" : ""}
-          onClick={() => {
-            setFocus("overview");
-            chooseMode("orbit");
-            setCameraRevision((value) => value + 1);
-          }}
-        >
-          <MousePointer2 size={14} /> Orbit
-        </button>
-        <button
-          className={cameraMode === "follow" ? "selected" : ""}
-          onClick={() => chooseMode("follow")}
-        >
-          <Focus size={14} /> Follow token
-        </button>
-        <button
-          className={cameraMode === "fly" ? "selected" : ""}
-          onClick={() => chooseMode("fly")}
-        >
-          <Wind size={14} /> Fly mode
-        </button>
-        <span>
-          {cameraMode === "fly"
-            ? "CLICK WORLD TO ENTER · ESC TO RELEASE"
-            : "DRAG TO ROTATE · SCROLL TO ZOOM"}
-        </span>
-      </div>
+      <details className="camera-controls hud">
+        <summary>Explore the world</summary>
+        <div aria-label="Camera controls">
+          <button
+            className={cameraMode === "guided" ? "selected" : ""}
+            onClick={() => {
+              setRunning(false);
+              setSelectedPart(null);
+              setFocus("overview");
+              chooseMode("guided");
+              setCameraRevision((value) => value + 1);
+            }}
+          >
+            <MousePointer2 size={14} /> Guided
+          </button>
+          <button
+            className={cameraMode === "follow" ? "selected" : ""}
+            onClick={() => chooseMode("follow")}
+          >
+            <Focus size={14} /> Follow
+          </button>
+          <button
+            className={cameraMode === "fly" ? "selected" : ""}
+            onClick={() => chooseMode("fly")}
+          >
+            <Wind size={14} /> Fly mode
+          </button>
+          <span>
+            {cameraMode === "fly"
+              ? "CLICK WORLD TO ENTER · ESC TO RELEASE"
+              : "SELECT A STATION OR PART TO INSPECT"}
+          </span>
+          <div
+            className="exhibit-controls"
+            aria-label="Explore optimization exhibits"
+          >
+            {EXHIBITS.slice(6).map((exhibit) => (
+              <button
+                key={exhibit.id}
+                aria-label={`Inspect ${exhibit.name}`}
+                aria-pressed={inspectionTarget === exhibit.id}
+                onClick={() => selectStation(exhibit.id)}
+              >
+                {exhibit.name}
+              </button>
+            ))}
+          </div>{" "}
+        </div>
+      </details>
       {cameraMode === "fly" && (
         <div className={`flight-instructions ${flightLocked ? "locked" : ""}`}>
           {flightLocked ? (
@@ -520,163 +727,61 @@ export default function App() {
         </button>
       )}
 
-      <section
-        className="prompt-deck hud"
-        aria-label="Prompt and generated tokens"
-      >
-        <div className="deck-topline">
-          <span>
-            <Terminal size={13} /> YOUR PROMPT
-          </span>
-          <div>
-            <span className={`run-indicator ${running ? "running" : ""}`} />
-            {run.phase === "idle"
-              ? "READY TO EXPLORE"
-              : run.phase === "done"
-                ? "COMPLETE"
-                : running
-                  ? "SIMULATION RUNNING"
-                  : "PAUSED"}
-            <button
-              className="reset-button"
-              onClick={reset}
-              aria-label="Reset simulation"
-            >
-              <RotateCcw size={13} />
-            </button>
-          </div>
-        </div>
-        <form
-          className="prompt-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            send();
+      {started && (
+        <Inspector
+          overview={cameraMode === "guided" && focus === "overview"}
+          target={inspectionTarget ?? "tokenize"}
+          stats={stats}
+          run={run}
+          settings={settings}
+          running={running}
+          partId={inspectionPart}
+          trace={trace}
+          cursor={cursor}
+          onExplain={(id) => {
+            selectPart(id);
+            setPopupPart(id);
           }}
-        >
-          <label htmlFor="prompt" className="sr-only">
-            Prompt
-          </label>
-          <input
-            id="prompt"
-            value={prompt}
-            maxLength={500}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="What do you want the model to think about?"
-            autoComplete="off"
-          />
-          <button
-            className="send-button"
-            aria-label={active ? "RUN AGAIN" : "SEND PROMPT"}
-            type="submit"
-            disabled={!prompt.trim()}
-          >
-            <span>{active ? "RUN AGAIN" : "SEND PROMPT"}</span>
-            <ArrowRight size={19} />
-          </button>
-        </form>
-        {run.phase !== "idle" && (
-          <>
-            <div className="token-strip" aria-label="Input tokens">
-              <span>INPUT / {run.tokens.length}</span>
-              {run.tokens.slice(0, 18).map((token, i) => (
-                <span
-                  className="token-chip"
-                  key={i}
-                  title={`Toy token ID: ${token.id}`}
-                >
-                  {token.text}
-                </span>
-              ))}
-              {run.tokens.length > 18 && (
-                <small>+{run.tokens.length - 18}</small>
-              )}
-            </div>
-            <div className="generated-row">
-              <span>OUTPUT / {run.output.length}</span>
-              <p aria-live="polite">
-                {run.output.length
-                  ? outputText(run.output)
-                  : "Watching the first token take shape…"}
-                {running && <i className="text-caret" />}
-              </p>
-            </div>
-            {settings.speculative && run.drafts.length > 0 && (
-              <div className="draft-row">
-                <span>DRAFT → VERIFY</span>
-                {run.drafts.map((draft, i) => (
-                  <span
-                    key={i}
-                    className={draft.accepted ? "accepted" : "rejected"}
-                  >
-                    {draft.accepted ? <Check size={10} /> : <X size={10} />}{" "}
-                    {draft.text}
-                  </span>
-                ))}
-                <small>
-                  {run.accepted} kept · {run.rejected} rejected
-                </small>
-              </div>
-            )}
-          </>
-        )}
-        <div className="transport">
-          <div>
-            <button
-              onClick={() => {
-                if (run.phase === "idle" || run.phase === "done") send();
-                else setRunning((value) => !value);
-              }}
-              aria-label={running ? "Pause simulation" : "Play simulation"}
-            >
-              {running ? <Pause size={14} /> : <Play size={14} />}
-            </button>
-            <button
-              onClick={() => {
-                setRunning(false);
-                setRun((previous) =>
-                  previous.phase === "idle" || previous.phase === "done"
-                    ? begin(prompt, settings)
-                    : advance(previous, settings),
-                );
-              }}
-              aria-label="Advance one stage"
-              disabled={!prompt.trim()}
-            >
-              <SkipForward size={15} />
-            </button>
-            <span>SIMULATION SPEED</span>
-            <select
-              aria-label="Simulation speed"
-              value={speed}
-              onChange={(event) => setSpeed(Number(event.target.value))}
-            >
-              {[0.5, 1, 2, 4].map((value) => (
-                <option key={value} value={value}>
-                  {value}×
-                </option>
-              ))}
-            </select>
-          </div>
-          <span className="simulation-note">
-            ILLUSTRATIVE TOKENS · NO MODEL WEIGHTS LOADED
-          </span>
-        </div>
-        {notice && (
-          <p className="configuration-notice" role="status">
-            {notice}
-            <button
-              aria-label="Dismiss configuration notice"
-              onClick={() => setNotice("")}
-            >
-              <X size={11} />
-            </button>
-          </p>
-        )}
-      </section>
+          onPart={selectPart}
+          onSeek={seek}
+        />
+      )}
+
+      {started && (
+        <PromptDeck
+          origin={introOrigin}
+          prompt={prompt}
+          run={run}
+          running={running}
+          trace={trace}
+          cursor={cursor}
+          speed={speed}
+          reduced={reduced}
+          onSpeed={setSpeed}
+          onSeek={seek}
+          onReset={reset}
+          notice={notice}
+          onDismiss={() => setNotice("")}
+          onReplay={() => {
+            seek(0);
+            chooseMode("follow");
+          }}
+          onPlay={() => {
+            if (!trace) {
+              send();
+              setRunning(true);
+              return;
+            }
+            if (cursor >= trace.events.length) setCursor(0);
+            chooseMode("follow");
+            setRunning((value) => !value);
+          }}
+        />
+      )}
 
       <nav className="station-dock hud" aria-label="Explore inference stages">
         <button
-          className={`overview-tile ${focus === "overview" && cameraMode === "orbit" ? "active" : ""}`}
+          className={`overview-tile ${focus === "overview" && cameraMode === "guided" ? "active" : ""}`}
           onClick={() => selectStation("overview")}
         >
           <Box size={24} />
@@ -687,7 +792,7 @@ export default function App() {
           return (
             <button
               key={station.id}
-              className={`station-tile ${run.phase === station.id ? "processing" : ""} ${focus === station.id && cameraMode === "orbit" ? "active" : ""}`}
+              className={`station-tile ${cameraMode === "follow" && inspectionTarget === station.id ? "processing" : ""} ${focus === station.id && cameraMode === "guided" ? "active" : ""}`}
               onClick={() => selectStation(station.id)}
               style={
                 { "--station-color": station.color } as React.CSSProperties
@@ -695,24 +800,17 @@ export default function App() {
             >
               <span className="dock-number">0{i + 1}</span>
               <Icon size={23} />
-              <span>{station.short}</span>
+              <span>
+                {i + 1}. {station.short}
+              </span>
               <small>{station.name}</small>
               {run.phase === station.id && <i />}
             </button>
           );
         })}
-        <div className="dock-end">
-          <span>NOT A VIDEO.</span>
-          <strong>
-            A MACHINE
-            <br />
-            YOU CAN CHANGE
-            <ArrowRight size={16} />
-          </strong>
-        </div>
       </nav>
       <footer className="world-footer hud">
-        <span>ORIGINAL VOXEL WORLD / BLENDER + THREE.JS</span>
+        <span>REDSTONE WORLD / PROCEDURAL VOXELS</span>
         <span>VISUAL SIMULATION · NOT GPU BENCHMARKS</span>
         <a
           href="https://docs.vllm.ai/en/latest/design/paged_attention/"

@@ -1,3 +1,4 @@
+import { FACTORY } from "./layout.ts";
 // An inspectable inference simulation. No model weights or engine benchmarks.
 export type Phase =
   | "idle"
@@ -10,6 +11,7 @@ export type Phase =
   | "done";
 export type Settings = {
   engine: "reference" | "vllm" | "speculative";
+  kvCache: boolean;
   paged: boolean;
   gqa: boolean;
   continuous: boolean;
@@ -21,6 +23,7 @@ export type Settings = {
 };
 export const DEFAULTS: Settings = {
   engine: "vllm",
+  kvCache: true,
   paged: true,
   gqa: true,
   continuous: true,
@@ -44,7 +47,7 @@ export const STATIONS = [
     name: "Tokenizer",
     short: "TOKENS",
     color: "#f2aa5a",
-    position: [-24, 0, 5],
+    position: FACTORY.tokenize.position,
     description:
       "Text splits into token IDs. This sandbox uses a simple word-and-punctuation tokenizer; production tokenizers use learned subwords.",
   },
@@ -53,7 +56,7 @@ export const STATIONS = [
     name: "Embedding",
     short: "EMBED",
     color: "#73e2b0",
-    position: [-15, 0, -4],
+    position: FACTORY.embed.position,
     description:
       "Each token ID looks up a vector. Position information lets the model distinguish the order of those tokens.",
   },
@@ -62,7 +65,7 @@ export const STATIONS = [
     name: "Attention",
     short: "ATTEND",
     color: "#62d4f3",
-    position: [-3, 0, -5],
+    position: FACTORY.attention.position,
     description:
       "Queries read keys and values from earlier tokens. Saved keys and values are reused as each new token is generated.",
   },
@@ -71,7 +74,7 @@ export const STATIONS = [
     name: "Feed-forward",
     short: "THINK",
     color: "#b6a0f3",
-    position: [10, 0, -3],
+    position: FACTORY.ffn.position,
     description:
       "A feed-forward network transforms each token’s features. Real models repeat attention and feed-forward blocks across many layers; this world shows one representative layer.",
   },
@@ -80,7 +83,7 @@ export const STATIONS = [
     name: "Sampling",
     short: "SAMPLE",
     color: "#ffc563",
-    position: [20, 0, 5],
+    position: FACTORY.sample.position,
     description:
       "Logits become probabilities. Temperature changes their spread; top-k limits the candidate set. One token is selected.",
   },
@@ -89,7 +92,7 @@ export const STATIONS = [
     name: "Output",
     short: "OUTPUT",
     color: "#f095a0",
-    position: [27, 0, 13],
+    position: FACTORY.emit.position,
     description:
       "The selected token joins the answer. Its embedding enters the next decode pass; the loop continues until the output limit.",
   },
@@ -97,9 +100,10 @@ export const STATIONS = [
 export type Station = (typeof STATIONS)[number];
 export type Token = { text: string; id: number };
 export type Candidate = { text: string; probability: number };
-export type Draft = { text: string; accepted: boolean };
+export type Draft = { text: string; accepted: boolean; verified: boolean };
 export type Job = {
   id: number;
+  lane: number | null;
   prompt: number;
   generated: number;
   target: number;
@@ -118,6 +122,21 @@ export type Run = {
   tick: number;
   passes: number;
   prompt: string;
+  progress: number;
+  lastEmitted: number;
+  previousJobs: Job[];
+  work: {
+    processed: number;
+    recomputed: number;
+    cacheReads: number;
+    drafted: number;
+    verified: number;
+    idleLanes: number;
+    occupiedLanes: number;
+    laneSteps: number;
+    peakReserved: number;
+    peakUnused: number;
+  };
 };
 export const idleRun = (): Run => ({
   phase: "idle",
@@ -132,6 +151,21 @@ export const idleRun = (): Run => ({
   tick: 0,
   passes: 0,
   prompt: "",
+  progress: 0,
+  lastEmitted: 0,
+  previousJobs: [],
+  work: {
+    processed: 0,
+    recomputed: 0,
+    cacheReads: 0,
+    drafted: 0,
+    verified: 0,
+    idleLanes: 0,
+    occupiedLanes: 0,
+    laneSteps: 0,
+    peakReserved: 0,
+    peakUnused: 0,
+  },
 });
 export function hash(text: string) {
   let n = 2166136261;
@@ -145,9 +179,13 @@ export function tokenize(prompt: string): Token[] {
 }
 export function preset(
   engine: Settings["engine"],
-): Pick<Settings, "engine" | "paged" | "gqa" | "continuous" | "speculative"> {
+): Pick<
+  Settings,
+  "engine" | "kvCache" | "paged" | "gqa" | "continuous" | "speculative"
+> {
   return {
     engine,
+    kvCache: true,
     paged: engine !== "reference",
     gqa: engine !== "reference",
     continuous: engine !== "reference",
@@ -163,8 +201,16 @@ export function begin(prompt: string, settings: Settings): Run {
     generated: 0,
     target: id === 0 ? settings.maxTokens : 2 + ((id * 3) % 7),
     status: id < settings.batchSize ? "active" : "waiting",
+    lane: id < settings.batchSize ? id : null,
   }));
-  return { ...idleRun(), phase: "tokenize", tokens, jobs, prompt };
+  return {
+    ...idleRun(),
+    phase: "tokenize",
+    tokens,
+    jobs,
+    previousJobs: jobs,
+    prompt,
+  };
 }
 function vocabulary(prompt: string): string[][] {
   const topic = /tree|forest|minecraft|block/i.test(prompt)
@@ -277,6 +323,10 @@ function choose(candidates: Candidate[], seed: number) {
     })?.text ?? candidates[0].text
   );
 }
+export function candidateWords(prompt: string, index: number) {
+  const words = vocabulary(prompt);
+  return words[index % words.length];
+}
 function sampleAt(run: Run, settings: Settings, index: number) {
   const words = vocabulary(run.prompt);
   const candidates = distribution(
@@ -289,79 +339,124 @@ function sampleAt(run: Run, settings: Settings, index: number) {
     text: choose(candidates, hash(run.prompt) + index * 17),
   };
 }
-export function advance(run: Run, settings: Settings): Run {
+export function enterNextStage(run: Run, settings: Settings): Run {
   if (run.phase === "idle" || run.phase === "done") return run;
-  const next = { ...run, tick: run.tick + 1 };
-  if (run.phase === "tokenize") return { ...next, phase: "embed" };
-  if (run.phase === "embed") return { ...next, phase: "attention" };
-  if (run.phase === "attention") return { ...next, phase: "ffn" };
-  if (run.phase === "ffn") {
-    const remaining = settings.maxTokens - run.output.length;
-    const first = sampleAt(run, settings, run.output.length);
-    const pending: string[] = [];
-    const drafts: Draft[] = [];
-    if (remaining > 0) {
-      const count = settings.speculative ? Math.min(3, remaining) : 1;
-      for (let i = 0; i < count; i++) {
-        const target = sampleAt(run, settings, run.output.length + i).text;
-        const accepts = !settings.speculative || (run.passes + i) % 4 !== 2;
-        drafts.push({ text: accepts ? target : "…", accepted: accepts });
-        pending.push(target);
-        // A rejected draft and all following drafts are discarded. Emit the target correction.
-        if (!accepts) break;
-      }
+  const phase =
+    run.phase === "emit"
+      ? run.jobs.every((job) => job.status === "done")
+        ? "done"
+        : "embed"
+      : PHASES[PHASES.indexOf(run.phase) + 1];
+  const next: Run = { ...run, phase, progress: 0, tick: run.tick + 1 };
+  if (phase !== "sample") return next;
+  const remaining = settings.maxTokens - run.output.length;
+  const pending: string[] = [];
+  const drafts: Draft[] = [];
+  if (remaining > 0) {
+    const count = settings.speculative ? Math.min(3, remaining) : 1;
+    let mismatch = false;
+    for (let i = 0; i < count; i++) {
+      const target = sampleAt(run, settings, run.output.length + i).text;
+      const accepts = !settings.speculative || (run.passes + i) % 4 !== 2;
+      drafts.push({
+        text: accepts ? target : "…",
+        accepted: !mismatch && accepts,
+        verified: !mismatch,
+      });
+      if (!mismatch) pending.push(target);
+      // Later proposals are discarded without verification after a mismatch.
+      if (!accepts) mismatch = true;
     }
-    return {
-      ...next,
-      phase: "sample",
-      candidates: first.candidates,
-      pending,
-      drafts: settings.speculative ? drafts : [],
-      passes: run.passes + 1,
-    };
-  }
-  if (run.phase === "emit")
-    return {
-      ...next,
-      phase: run.output.length >= settings.maxTokens ? "done" : "attention",
-    };
-  const output = [...run.output, ...run.pending];
-  let jobs = run.jobs.map((job) => {
-    if (job.status !== "active") return { ...job };
-    const generated = Math.min(
-      job.target,
-      job.generated + (job.id === 0 ? run.pending.length : 1),
-    );
-    return {
-      ...job,
-      generated,
-      status: generated >= job.target ? ("done" as const) : ("active" as const),
-    };
-  });
-  const active = jobs.filter((job) => job.status === "active").length;
-  if (settings.continuous || active === 0) {
-    let spaces = settings.batchSize - active;
-    jobs = jobs.map((job) =>
-      job.status === "waiting" && spaces-- > 0
-        ? { ...job, status: "active" }
-        : job,
-    );
   }
   return {
     ...next,
-    phase: "emit",
-    output,
-    pending: [],
-    jobs,
-    accepted:
-      run.accepted + run.drafts.filter((draft) => draft.accepted).length,
-    rejected:
-      run.rejected + run.drafts.filter((draft) => !draft.accepted).length,
+    candidates:
+      remaining > 0
+        ? sampleAt(run, settings, run.output.length).candidates
+        : [],
+    pending,
+    drafts: settings.speculative ? drafts : [],
   };
 }
+
+// Commit a stage exactly once, at its final frame. The same pure result can be
+// previewed by the renderer to show packets approaching their destination.
+export function completeStage(run: Run, settings: Settings): Run {
+  if (run.progress === 1 || run.phase === "idle" || run.phase === "done")
+    return run;
+  let next: Run = { ...run, progress: 1, work: { ...run.work } };
+  const promptActive = run.output.length < settings.maxTokens;
+  const context = run.tokens.length + run.output.length;
+  const fresh = run.output.length ? run.lastEmitted : run.tokens.length;
+  if (run.phase === "embed" && promptActive) {
+    next.work.processed += settings.kvCache ? fresh : context;
+    next.work.recomputed += settings.kvCache ? 0 : context - fresh;
+  }
+  if (run.phase === "attention" && promptActive && settings.kvCache)
+    next.work.cacheReads += context - fresh;
+  if (run.phase === "sample" && promptActive) {
+    next.passes++;
+    next.work.drafted += run.drafts.length;
+    next.work.verified += run.drafts.filter((draft) => draft.verified).length;
+    next.accepted += run.drafts.filter((draft) => draft.accepted).length;
+    next.rejected += run.drafts.filter(
+      (draft) => draft.verified && !draft.accepted,
+    ).length;
+  }
+  if (run.phase === "emit") {
+    let jobs = run.jobs.map((job) => {
+      if (job.status !== "active") return { ...job };
+      const generated = Math.min(
+        job.target,
+        job.generated + (job.id === 0 ? run.pending.length : 1),
+      );
+      return {
+        ...job,
+        generated,
+        lane: generated >= job.target ? null : job.lane,
+        status:
+          generated >= job.target ? ("done" as const) : ("active" as const),
+      };
+    });
+    const active = jobs.filter((job) => job.status === "active").length;
+    if (settings.continuous || active === 0) {
+      const freeLanes = Array.from(
+        { length: settings.batchSize },
+        (_, lane) => lane,
+      ).filter((lane) => !jobs.some((job) => job.lane === lane));
+      jobs = jobs.map((job) => {
+        if (job.status !== "waiting") return job;
+        const lane = freeLanes.shift();
+        return lane === undefined ? job : { ...job, status: "active", lane };
+      });
+    }
+    const occupied = run.jobs.filter((job) => job.status === "active").length;
+    next = {
+      ...next,
+      output: [...run.output, ...run.pending],
+      lastEmitted: run.pending.length,
+      pending: [],
+      previousJobs: run.jobs,
+      jobs,
+    };
+    next.work.idleLanes += settings.batchSize - occupied;
+    next.work.occupiedLanes += occupied;
+    next.work.laneSteps += settings.batchSize;
+  }
+  const stats = memory(next, settings);
+  next.work.peakReserved = Math.max(run.work.peakReserved, stats.reserved);
+  next.work.peakUnused = Math.max(
+    run.work.peakUnused,
+    stats.reserved - stats.used,
+  );
+  return next;
+}
+
 export function memory(run: Run, settings: Settings) {
   const heads = settings.gqa ? 2 : 8;
-  const active = run.jobs.filter((job) => job.status === "active");
+  const active = settings.kvCache
+    ? run.jobs.filter((job) => job.status === "active")
+    : [];
   const blocks = active.flatMap((job) => {
     const used = job.prompt + job.generated;
     const reserved = settings.paged
@@ -386,4 +481,28 @@ export function memory(run: Run, settings: Settings) {
 }
 export function outputText(tokens: string[]) {
   return tokens.join(" ").replace(/\s+([.!?,…])/g, "$1");
+}
+
+// Manual stepping completes the current stage, then shows the next completed stage.
+export function advance(run: Run, settings: Settings): Run {
+  return completeStage(
+    enterNextStage(completeStage(run, settings), settings),
+    settings,
+  );
+}
+// Frames interpolate a single shared timeline; counts commit only at boundaries.
+export function elapse(run: Run, settings: Settings, seconds: number): Run {
+  if (run.phase === "idle" || run.phase === "done" || seconds <= 0) return run;
+  let next = run;
+  let remaining = seconds;
+  while (remaining > 0 && next.phase !== "done") {
+    if (next.progress === 1) next = enterNextStage(next, settings);
+    if (next.phase === "done") break;
+    const available = 1 - next.progress;
+    if (remaining < available)
+      return { ...next, progress: next.progress + remaining };
+    remaining -= available;
+    next = completeStage(next, settings);
+  }
+  return next;
 }

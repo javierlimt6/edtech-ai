@@ -1,0 +1,740 @@
+/* Beginner lesson: a world on the left, one explanation on the right. */
+.lesson-shell {
+  --lesson-side: clamp(360px, 32vw, 480px);
+  min-height: 100dvh;
+}
+.lesson-shell .full-world {
+  right: var(--lesson-side);
+  width: auto;
+}
+.lesson-shell .world-header {
+  right: calc(var(--lesson-side) + 24px);
+  left: 24px;
+  top: 20px;
+}
+.lesson-shell .world-title,
+.lesson-shell .world-status,
+.lesson-shell .world-footer,
+.lesson-shell .brand small {
+  display: none;
+}
+.lesson-shell .brand {
+  font-size: 19px;
+}
+.lesson-shell .header-actions .icon-button {
+  display: none;
+}
+.lesson-shell .flow-inspector {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: var(--lesson-side);
+  height: 100dvh;
+  max-height: none;
+  padding: 40px 32px;
+  border: 0;
+  border-left: 3px solid #a99472;
+  box-shadow: none;
+  overflow-y: auto;
+  background: #fff9ee;
+}
+.lesson-shell .inspector-heading {
+  display: flex;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.lesson-kicker {
+  font:
+    700 10px/1.6 "Silkscreen",
+    monospace;
+  color: #8c3022;
+}
+.lesson-shell .inspector-heading > span:last-child {
+  font:
+    12px/1.5 "DM Sans Variable",
+    sans-serif;
+}
+.lesson-title {
+  font:
+    700 32px/1.12 "DM Sans Variable",
+    sans-serif;
+  color: #332e22;
+  text-wrap: balance;
+  margin: 0 0 22px;
+}
+.lesson-meaning {
+  font-size: 18px;
+  line-height: 1.6;
+  text-wrap: pretty;
+  margin: 0 0 26px;
+}
+.lesson-watch p,
+.lesson-current p,
+.lesson-takeaway p {
+  font-size: 16px;
+  line-height: 1.55;
+  margin: 9px 0 0;
+  text-wrap: pretty;
+}
+.lesson-watch {
+  padding: 20px;
+  background: #eee6d2;
+  border-left: 4px solid #9b7743;
+}
+.lesson-current {
+  margin: 24px 0;
+}
+.lesson-takeaway {
+  border-top: 1px solid #cfbfa0;
+  padding-top: 20px;
+  margin-bottom: 24px;
+}
+.technical-details {
+  border-top: 1px solid #cfbfa0;
+  padding-top: 18px;
+}
+.technical-details summary,
+.prompt-details summary,
+.camera-controls summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lesson-shell .technical-details .part-select,
+.lesson-shell .technical-details .operation-values,
+.lesson-shell .technical-details .inspector-action {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.lesson-shell .technical-details select {
+  font-size: 14px;
+  padding: 10px;
+}
+.lesson-shell .flow-inspector .lesson-footnote {
+  display: block;
+  margin-top: 28px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #746b5b;
+}
+.lesson-shell .engine-panel,
+.lesson-shell.has-inspector .engine-panel {
+  position: fixed;
+  inset: 76px calc(var(--lesson-side) + 24px) auto auto;
+  width: min(330px, calc(100vw - var(--lesson-side) - 48px));
+  max-height: calc(100dvh - 100px);
+  min-height: 0;
+  z-index: 40;
+  background: #fff9ee;
+}
+.lesson-shell .prompt-deck {
+  position: fixed;
+  left: 24px;
+  right: calc(var(--lesson-side) + 24px);
+  bottom: 100px;
+  width: auto;
+  height: auto;
+  max-height: 42dvh;
+  padding: 18px 20px;
+  overflow: auto;
+  text-align: center;
+}
+.fixed-prompt {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: #332e22;
+  font:
+    600 16px/1.5 "DM Sans Variable",
+    sans-serif;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.lesson-answer {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 10px 0 14px;
+  font-size: 14px;
+}
+.lesson-answer > span {
+  flex-shrink: 0;
+  color: #7a6f5c;
+}
+.lesson-answer p {
+  margin: 0;
+  line-height: 1.5;
+}
+.lesson-transport {
+  display: grid;
+  gap: 12px;
+}
+.playback-buttons {
+  display: grid;
+  grid-template-columns: 1fr 104px 1fr;
+  gap: 8px;
+  width: min(100%, 360px);
+  margin-inline: auto;
+}
+.playback-buttons button {
+  min-height: 48px;
+}
+.lesson-transport button,
+.advanced-playback button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #b39a71;
+  background: #fff8e8;
+  color: #473821;
+  font-size: 13px;
+}
+.lesson-primary,
+.lesson-transport .lesson-primary {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  border: 2px solid #82251a;
+  background: #b83223;
+  color: #fff9ee;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 12px 20px;
+  cursor: pointer;
+}
+.prompt-details {
+  width: 100%;
+}
+.prompt-details[open] {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+}
+.advanced-playback {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d7c6a7;
+  font-size: 13px;
+  text-align: left;
+}
+.advanced-playback select {
+  color: #332e22;
+  background: #fff9ee;
+  padding: 5px;
+  margin-left: 8px;
+}
+.lesson-shell .camera-controls,
+.lesson-shell.has-inspector .camera-controls {
+  position: fixed;
+  top: 76px;
+  bottom: auto;
+  left: 24px;
+  display: block;
+  padding: 10px 12px;
+  background: #fff9ee;
+  border: 1px solid #b39a71;
+  max-width: calc(100vw - var(--lesson-side) - 48px);
+}
+.camera-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+}
+.camera-controls > div > span {
+  font-size: 10px;
+  flex-basis: 100%;
+}
+.lesson-shell .station-dock {
+  left: 24px;
+  right: calc(var(--lesson-side) + 24px);
+  bottom: 18px;
+  width: auto;
+  height: 66px;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+}
+.lesson-shell .station-dock > button {
+  min-width: 66px;
+  flex: 1;
+  padding: 8px;
+}
+.lesson-shell .station-tile small,
+.lesson-shell .dock-number,
+.lesson-shell .exhibit-controls {
+  display: none;
+}
+.lesson-shell .station-tile > span:not(.dock-number),
+.lesson-shell .overview-tile > span {
+  font-size: 9px;
+}
+.lesson-shell .station-dock svg {
+  width: 19px;
+  height: 19px;
+}
+.lesson-shell .is-extra {
+  display: none;
+}
+.lesson-shell .show-hud {
+  right: calc(var(--lesson-side) + 24px);
+}
+.lesson-shell.hud-hidden .full-world {
+  right: 0;
+}
+.intro-dialog {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  color: #332e22;
+  overflow: visible;
+}
+.intro-dialog::backdrop {
+  background: #2b372a55;
+  backdrop-filter: blur(10px);
+}
+.intro-card {
+  background: #fff9ee;
+  padding: 36px;
+  border: 3px solid #9a7548;
+  box-shadow: 6px 6px 0 #40301c55;
+}
+.intro-card h1 {
+  font-size: 34px;
+  line-height: 1.15;
+  text-wrap: balance;
+  margin: 18px 0;
+}
+.intro-card p {
+  font-size: 16px;
+  line-height: 1.5;
+  margin-bottom: 26px;
+  text-wrap: pretty;
+}
+.intro-card .lesson-primary {
+  width: 100%;
+  min-height: 50px;
+}
+.lesson-shell.is-intro .hud {
+  visibility: hidden;
+}
+.lesson-shell.is-intro .full-world {
+  right: 0;
+}
+.lesson-shell button:focus-visible,
+.lesson-shell summary:focus-visible,
+.lesson-shell select:focus-visible,
+.lesson-shell input:focus-visible {
+  outline: 3px solid #9f3020;
+  outline-offset: 3px;
+}
+.lesson-shell button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (max-width: 900px) {
+  .lesson-shell {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+  .lesson-shell .full-world {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 44dvh;
+    min-height: 290px;
+    flex-shrink: 0;
+  }
+  .lesson-shell .world-header {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+  }
+  .lesson-shell .brand {
+    font-size: 15px;
+  }
+  .lesson-shell .brand-icon {
+    width: 30px;
+    height: 30px;
+  }
+  .lesson-shell .settings-button {
+    font-size: 9px;
+    padding: 9px;
+  }
+  .lesson-shell .flow-inspector {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding: 26px 22px;
+    border: 0;
+    border-top: 3px solid #a99472;
+    order: 3;
+  }
+  .lesson-title {
+    font-size: 28px;
+  }
+  .lesson-meaning {
+    font-size: 17px;
+  }
+  .lesson-shell .inspector-heading {
+    margin-bottom: 18px;
+  }
+  .lesson-shell .prompt-deck {
+    position: relative;
+    inset: auto;
+    width: auto;
+    max-height: none;
+    margin: 0;
+    padding: 16px;
+    border: 0;
+    border-top: 1px solid #b39a71;
+    order: 2;
+  }
+  .fixed-prompt {
+    font-size: 14px;
+  }
+  .lesson-answer {
+    font-size: 13px;
+    gap: 10px;
+  }
+  .lesson-shell .camera-controls,
+  .lesson-shell.has-inspector .camera-controls {
+    position: absolute;
+    top: 58px;
+    left: 14px;
+    max-width: calc(100vw - 28px);
+  }
+  .lesson-shell .station-dock {
+    position: relative;
+    inset: auto;
+    flex-shrink: 0;
+    width: 100%;
+    height: 60px;
+    padding: 6px 10px;
+    order: 1;
+  }
+  .lesson-shell .engine-panel,
+  .lesson-shell.has-inspector .engine-panel {
+    inset: 70px 14px auto;
+    width: auto;
+    max-height: calc(100dvh - 90px);
+  }
+  .lesson-shell .station-label {
+    font-size: 10px;
+  }
+  .lesson-shell .factory-caption {
+    display: none;
+  }
+  .lesson-shell .show-hud {
+    right: 14px;
+  }
+  .intro-card {
+    padding: 28px;
+  }
+  .intro-card h1 {
+    font-size: 28px;
+  }
+  .lesson-shell.is-intro .full-world {
+    height: 100dvh;
+  }
+}
+
+.lesson-shell .camera-controls .exhibit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+@media (max-width: 900px) {
+  body {
+    overflow-y: auto;
+  }
+}
+/* Keep the lesson inside the world as a generous floating overlay. */
+@media (min-width: 901px) {
+  .lesson-shell .full-world {
+    right: 0;
+    width: 100%;
+  }
+  .lesson-shell .world-header {
+    right: 24px;
+  }
+  .lesson-shell .flow-inspector {
+    inset: 78px 20px 20px auto;
+    height: auto;
+    width: var(--lesson-side);
+    border: 2px solid #aa9470;
+    box-shadow: 5px 5px 0 #483a2440;
+    background: #fff9eef5;
+  }
+}
+
+@media (max-width: 900px) {
+  .lesson-shell {
+    height: auto;
+  }
+  .lesson-shell .prompt-deck,
+  .lesson-shell .flow-inspector {
+    flex-shrink: 0;
+  }
+}
+
+@media (min-width: 901px) {
+  .lesson-shell .prompt-deck {
+    max-width: 640px;
+  }
+}
+
+.flow-inspector .lesson-sequence {
+  display: flex;
+  gap: 0;
+  align-items: center;
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+}
+.flow-inspector .lesson-sequence li {
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  color: #776b57;
+}
+.lesson-sequence li:not(:last-child)::after {
+  content: "→";
+  padding: 0 6px;
+  color: #95836a;
+}
+.lesson-sequence li > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #b9a582;
+  font:
+    700 13px "Silkscreen",
+    monospace;
+}
+.lesson-sequence li[aria-current="step"] > span:first-child {
+  background: #b83223;
+  border-color: #82251a;
+  color: #fff9ee;
+}
+.lesson-next {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8c3022;
+  margin: 0 0 20px;
+}
+
+/* Keep the machine and its explanation visually separate from navigation. */
+.lesson-shell .station-label.overview-marker {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 12px;
+  border-width: 2px;
+  box-shadow: 2px 2px 0 #50381f;
+}
+.lesson-shell .flow-inspector {
+  padding: 28px;
+}
+.lesson-shell .inspector-heading {
+  margin-bottom: 20px;
+}
+.lesson-title {
+  font-size: 30px;
+  margin-bottom: 18px;
+}
+.lesson-meaning {
+  font-size: 17px;
+  line-height: 1.55;
+  margin-bottom: 20px;
+}
+.lesson-current {
+  padding: 16px 0;
+  margin: 0;
+  border-top: 1px solid #d7c6a7;
+}
+.lesson-watch {
+  padding: 16px;
+  margin: 0 0 20px;
+}
+.lesson-watch p,
+.lesson-current p {
+  font-size: 15px;
+}
+.lesson-shell .prompt-deck {
+  padding: 14px 20px;
+  background: #fff9ee;
+}
+.lesson-shell .camera-controls > div {
+  max-width: 310px;
+}
+.lesson-shell .camera-controls .exhibit-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lesson-shell .camera-controls .exhibit-controls button {
+  width: auto;
+  flex: auto;
+}
+
+.machine-details-title {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.lesson-disclosure-toggle {
+  cursor: pointer;
+  width: fit-content;
+  margin: 0 0 20px auto;
+  padding: 10px 12px;
+  border: 1px solid #b39a71;
+  background: #fff9ee;
+  color: #473821;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lesson-disclosure-toggle:focus-visible {
+  outline: 2px solid #b83223;
+  outline-offset: 3px;
+}
+.lesson-shell .flow-inspector.is-collapsed {
+  height: auto;
+  bottom: auto;
+  padding: 12px;
+}
+.lesson-disclosure:not([open]) > summary {
+  margin: 0 0 0 auto;
+}
+
+.part-popup {
+  position: fixed;
+  inset: auto auto 112px 24px;
+  margin: 0;
+  width: min(420px, calc(100vw - 48px));
+  max-height: calc(100dvh - 160px);
+  overflow: auto;
+  padding: 0;
+  border: 2px solid #aa9470;
+  background: #fff9ee;
+  color: #332e22;
+  box-shadow: 5px 5px 0 #483a2440;
+}
+.part-popup::backdrop {
+  background: #18221918;
+}
+.part-popup article {
+  padding: 24px;
+}
+.part-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.part-popup-header button {
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  min-height: 40px;
+  background: #fff9ee;
+  color: #473821;
+  border: 1px solid #b39a71;
+  cursor: pointer;
+}
+.part-popup h2 {
+  font-size: 24px;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 14px 0;
+}
+.part-popup p,
+.part-popup dd {
+  font-size: 15px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.part-popup dt {
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 14px;
+}
+.part-popup dd {
+  margin: 4px 0 0;
+}
+.part-popup .part-popup-note {
+  font-size: 13px;
+  color: #6b5e48;
+}
+@media (max-width: 900px) {
+  .part-popup {
+    inset: auto 16px 16px;
+    width: auto;
+    max-height: 50dvh;
+  }
+}
+.explain-component {
+  padding: 10px 12px;
+  border: 1px solid #b39a71;
+  background: #fff9ee;
+  color: #473821;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.part-popup {
+  inset: auto;
+  visibility: hidden;
+  width: min(360px, calc(100vw - 32px));
+  max-height: none;
+  overflow: visible;
+  pointer-events: auto;
+}
+.part-popup article {
+  max-height: min(420px, calc(100dvh - 48px));
+  overflow-y: auto;
+  background: #fff9ee;
+}
+.part-popup-leader {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  pointer-events: none;
+  overflow: visible;
+  z-index: -1;
+}
+.part-popup-leader line {
+  stroke: #8c3022;
+  stroke-width: 2;
+}
+.part-popup-leader circle {
+  fill: #b83223;
+  stroke: #fff9ee;
+  stroke-width: 2;
+}
